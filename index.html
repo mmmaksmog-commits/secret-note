@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Секретная записка — шифрование AES</title>
+  <meta name="description" content="Зашифруйте сообщение паролем прямо в браузере и отправьте ссылку. AES-256-GCM, текст не попадает на сервер.">
+  <meta name="theme-color" content="#07090d">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔏</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg: #07090d; --card: #0f141c; --line: #1d2736; --text: #e7eef8; --muted: #7d8ba1; --green: #22e584; --red: #ff5c7a; color-scheme: dark; }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; min-height: 100dvh; background: radial-gradient(circle at 50% -10%, #0f2a22, var(--bg) 55%); background-color: var(--bg); color: var(--text); font: 15px/1.55 Inter, system-ui, sans-serif; }
+    button, input, textarea { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    .app { max-width: 620px; margin: 0 auto; padding: calc(28px + env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom)); }
+    .logo { font: 800 clamp(26px, 6vw, 36px) 'JetBrains Mono', monospace; letter-spacing: -0.02em; }
+    .logo span { color: var(--green); }
+    .lead { margin: 8px 0 0; color: var(--muted); }
+    .card { margin-top: 20px; padding: 22px; border: 1px solid var(--line); border-radius: 22px; background: var(--card); }
+    .field { display: grid; gap: 6px; margin-bottom: 14px; font-size: 13px; font-weight: 600; color: var(--muted); }
+    textarea, input { width: 100%; padding: 13px 14px; border: 1px solid var(--line); border-radius: 14px; background: #070a0f; font-size: 16px; color: var(--text); outline: none; transition: border-color 0.2s; }
+    textarea { min-height: 150px; resize: vertical; font-family: 'JetBrains Mono', monospace; font-size: 15px; }
+    textarea:focus, input:focus { border-color: var(--green); }
+    .row { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+    .strength { height: 4px; margin-top: 6px; border-radius: 2px; background: var(--line); overflow: hidden; }
+    .strength i { display: block; height: 100%; width: 0; transition: width 0.3s, background 0.3s; }
+    .btn { width: 100%; padding: 15px; border: 0; border-radius: 14px; background: var(--green); color: #022614; font-weight: 800; font-size: 16px; }
+    .btn--ghost { background: transparent; border: 1px solid var(--line); color: var(--text); font-weight: 700; }
+    .btn:disabled { opacity: 0.5; cursor: default; }
+    .out { margin-top: 18px; }
+    .link { padding: 14px; border-radius: 14px; background: #070a0f; border: 1px dashed var(--green); font: 400 13px 'JetBrains Mono', monospace; word-break: break-all; color: var(--green); max-height: 120px; overflow: auto; }
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .warn { margin: 12px 0 0; color: var(--muted); font-size: 13px; }
+    .lock { display: grid; place-items: center; width: 84px; height: 84px; margin: 0 auto 14px; border-radius: 26px; background: rgba(34, 229, 132, 0.1); font-size: 40px; }
+    .center { text-align: center; }
+    .msg { padding: 18px; border-radius: 16px; background: #070a0f; border: 1px solid var(--line); font: 400 15px/1.6 'JetBrains Mono', monospace; white-space: pre-wrap; word-break: break-word; }
+    .error { color: var(--red); font-weight: 600; margin: 10px 0 0; }
+    .how { display: grid; gap: 10px; margin-top: 22px; padding: 0; list-style: none; color: var(--muted); font-size: 14px; }
+    .how li { display: grid; grid-template-columns: 30px 1fr; gap: 10px; }
+    .how b { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: var(--card); border: 1px solid var(--line); color: var(--green); font-family: 'JetBrains Mono', monospace; }
+    .typing { animation: reveal 0.6s ease; }
+    @keyframes reveal { from { filter: blur(8px); opacity: 0; } }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <div class="logo">secret<span>_</span>note</div>
+    <p class="lead">Шифрует сообщение паролем прямо в браузере. Сервер никогда не видит ни текст, ни пароль.</p>
+
+    <section class="card" id="create">
+      <label class="field">Секретное сообщение<textarea id="text" maxlength="3000" placeholder="Пароль от Wi-Fi, адрес вечеринки, признание…"></textarea></label>
+      <div class="row" style="margin:-8px 0 14px"><span>Шифрование AES-256-GCM</span><span id="count">0 / 3000</span></div>
+      <label class="field">Пароль для расшифровки<input id="pass" type="text" autocomplete="off" spellcheck="false" placeholder="Сообщите его получателю отдельно"><div class="strength"><i id="str"></i></div></label>
+      <label class="field">Подсказка к паролю (видна всем, необязательно)<input id="hint" maxlength="80" placeholder="Например: город, где мы познакомились"></label>
+      <button class="btn" id="encrypt">🔒 Зашифровать и получить ссылку</button>
+      <div class="out" id="out" hidden>
+        <div class="link" id="link"></div>
+        <div class="two"><button class="btn" id="copy">Скопировать ссылку</button><button class="btn btn--ghost" id="share">Отправить…</button></div>
+        <p class="warn">⚠️ Без пароля сообщение не прочитать — даже нам. Передайте пароль другим способом, не в той же переписке.</p>
+      </div>
+    </section>
+
+    <section class="card center" id="open" hidden>
+      <div class="lock">🔐</div>
+      <h2 style="margin:0 0 6px">Вам секретное сообщение</h2>
+      <p class="lead" id="openHint">Введите пароль, чтобы прочитать.</p>
+      <div style="margin-top:16px;text-align:left">
+        <label class="field">Пароль<input id="openPass" type="password" autocomplete="off"></label>
+        <button class="btn" id="decrypt">Расшифровать</button>
+        <p class="error" id="err" hidden></p>
+      </div>
+      <div id="plain" hidden style="text-align:left;margin-top:18px">
+        <div class="msg typing" id="plainText"></div>
+        <div class="two"><button class="btn btn--ghost" id="copyPlain">Скопировать текст</button><button class="btn btn--ghost" id="newNote">Написать свою</button></div>
+      </div>
+    </section>
+
+    <ul class="how">
+      <li><b>1</b><span>Текст шифруется вашим паролем по стандарту AES-256 с ключом через PBKDF2 (250 000 итераций).</span></li>
+      <li><b>2</b><span>Зашифрованные данные лежат в ссылке после символа #, а эта часть адреса не отправляется на сервер.</span></li>
+      <li><b>3</b><span>Получатель открывает ссылку, вводит пароль — и расшифровка происходит у него в браузере.</span></li>
+    </ul>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const enc = new TextEncoder(), dec = new TextDecoder();
+    const ITER = 250000;
+    const b64u = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const unb64u = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
+
+    async function key(pass, salt) {
+      const base = await crypto.subtle.importKey('raw', enc.encode(pass), 'PBKDF2', false, ['deriveKey']);
+      return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: ITER, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+    }
+    async function encryptText(text, pass) {
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await key(pass, salt), enc.encode(text));
+      const packed = new Uint8Array(28 + ct.byteLength);
+      packed.set(salt, 0); packed.set(iv, 16); packed.set(new Uint8Array(ct), 28);
+      return b64u(packed);
+    }
+    async function decryptText(data, pass) {
+      const bytes = unb64u(data);
+      const salt = bytes.slice(0, 16), iv = bytes.slice(16, 28), ct = bytes.slice(28);
+      return dec.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, await key(pass, salt), ct));
+    }
+
+    // Создание
+    $('text').addEventListener('input', () => { $('count').textContent = `${$('text').value.length} / 3000`; $('out').hidden = true; });
+    $('pass').addEventListener('input', () => {
+      const p = $('pass').value;
+      let score = Math.min(4, Math.floor(p.length / 4)) + (/[A-ZА-Я]/.test(p) && /[a-zа-я]/.test(p) ? 1 : 0) + (/\d/.test(p) ? 1 : 0) + (/[^\w\sа-яё]/i.test(p) ? 1 : 0);
+      score = Math.min(6, score);
+      const s = $('str');
+      s.style.width = `${(score / 6) * 100}%`;
+      s.style.background = score < 3 ? 'var(--red)' : score < 5 ? '#facc15' : 'var(--green)';
+      $('out').hidden = true;
+    });
+    $('encrypt').onclick = async () => {
+      const text = $('text').value.trim(), pass = $('pass').value;
+      if (!text) { $('text').focus(); return; }
+      if (pass.length < 4) { $('pass').focus(); $('pass').placeholder = 'Минимум 4 символа'; return; }
+      $('encrypt').disabled = true; $('encrypt').textContent = 'Шифрую…';
+      const data = await encryptText(text, pass);
+      const hint = $('hint').value.trim();
+      const url = `${location.origin}${location.pathname}#n=${data}${hint ? `&h=${encodeURIComponent(hint)}` : ''}`;
+      $('link').textContent = url;
+      $('out').hidden = false;
+      $('encrypt').disabled = false; $('encrypt').textContent = '🔒 Зашифровать и получить ссылку';
+    };
+    $('copy').onclick = async () => { try { await navigator.clipboard.writeText($('link').textContent); $('copy').textContent = 'Скопировано ✓'; setTimeout(() => { $('copy').textContent = 'Скопировать ссылку'; }, 1500); } catch { prompt('Скопируйте ссылку:', $('link').textContent); } };
+    $('share').onclick = async () => { try { if (navigator.share) await navigator.share({ title: 'Секретное сообщение', url: $('link').textContent }); else $('copy').click(); } catch {} };
+
+    // Открытие
+    function route() {
+      const params = new URLSearchParams(location.hash.slice(1));
+      const data = params.get('n');
+      $('create').hidden = Boolean(data);
+      $('open').hidden = !data;
+      if (data) {
+        const hint = params.get('h');
+        $('openHint').textContent = hint ? `Подсказка: ${hint}` : 'Введите пароль, чтобы прочитать.';
+        $('plain').hidden = true; $('err').hidden = true; $('openPass').value = '';
+        setTimeout(() => $('openPass').focus(), 50);
+      }
+    }
+    $('decrypt').onclick = async () => {
+      const data = new URLSearchParams(location.hash.slice(1)).get('n');
+      $('decrypt').disabled = true; $('decrypt').textContent = 'Расшифровываю…';
+      try {
+        const text = await decryptText(data, $('openPass').value);
+        $('plainText').textContent = text;
+        $('plain').hidden = false; $('err').hidden = true;
+      } catch {
+        $('err').textContent = '❌ Неверный пароль или ссылка повреждена'; $('err').hidden = false;
+      }
+      $('decrypt').disabled = false; $('decrypt').textContent = 'Расшифровать';
+    };
+    $('openPass').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('decrypt').click(); });
+    $('copyPlain').onclick = async () => { try { await navigator.clipboard.writeText($('plainText').textContent); $('copyPlain').textContent = 'Скопировано ✓'; } catch {} };
+    $('newNote').onclick = () => { history.pushState(null, '', location.pathname); route(); };
+    window.addEventListener('hashchange', route);
+    route();
+  </script>
+</body>
+</html>
